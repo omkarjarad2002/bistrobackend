@@ -13,9 +13,10 @@ const nodemailer = require("nodemailer");
 
 require("../db/conn");
 const User = require("../models/userSchema");
+const Contact = require("../models/contactSchema");
 const RestaurantNewUser = require("../models/userSchemaAD");
 const Product = require("../models/productSchema");
-const Cart = require("../models/cartSchema"); 
+const Cart = require("../models/cartSchema");
 const Authenticate = require("../authentification/Middleware");
 
 const storage = multer.diskStorage({
@@ -33,6 +34,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 //payment route
+
+router.post("/uploadfile", upload.single("file"), (req, res) => {
+  return res.json({ file: req.file });
+});
 
 router.post("/payment", (req, res) => {
   const { amount, email } = req.body;
@@ -98,7 +103,6 @@ router.post("/razorPayment", (req, res) => {
 
 router.post("/addnewproduct", async (req, res) => {
   const { name, price, quentity, type, file, restaurantID } = req.body;
-  console.log(req.body);
 
   if (!name || !price || !quentity || !type || !restaurantID) {
     return res.status(422).json({ message: "ERROR" });
@@ -158,6 +162,25 @@ router.post("/register", async (req, res) => {
   }
 });
 
+//contact route
+
+router.post("/contact", async (req, res) => {
+  const { name, email, phone, address } = req.body;
+
+  if (!name || !email || !phone || !address) {
+    return res.status(400).json({ message: "Some Error Occured" });
+  }
+
+  try {
+    const contact = new Contact({ name, email, phone, address });
+
+    await contact.save();
+    return res.status(201).json({ message: "Success !!" });
+  } catch (error) {
+    return res.status(401).json(error);
+  }
+});
+
 //Adding new restaurant route
 
 router.post("/addrestaurant", async (req, res) => {
@@ -198,11 +221,11 @@ router.post("/addrestaurant", async (req, res) => {
   }
 });
 
-//signin route
+//signIn route
 
 router.post("/signin", async (req, res) => {
   try {
-    const { email, password } = req.body; 
+    const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: "Invalid Credentials !" });
@@ -211,7 +234,6 @@ router.post("/signin", async (req, res) => {
     const userLogin = await User.findOne({ email: email });
     const adminLogin = await User.findOne({ email: email, isadmin: true });
     const reststaurantUser = await RestaurantNewUser.findOne({ email: email });
-    
 
     if (userLogin) {
       const isMatch = await bcrypt.compare(password, userLogin.password);
@@ -220,10 +242,9 @@ router.post("/signin", async (req, res) => {
       // const refreshtoken = await userLogin.generateAuthToken();
 
       res.cookie("jwttoken", token, {
-        expires: new Date(Date.now() + 1440000),
+        expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
         httpOnly: true,
       });
- 
 
       if (reststaurantUser) {
         return res.status(202).json({ reststaurantUser });
@@ -243,6 +264,34 @@ router.post("/signin", async (req, res) => {
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: "Failed to signIn !!" });
+  }
+});
+
+router.get("/refreshtoken", async (req, res) => {
+  const { jwttoken } = req.cookies;
+
+  if (!jwttoken) {
+    return res.status(401).json({ message: "ERROR" });
+  }
+
+  try {
+    const tokenData = jwt.verify(jwttoken, process.env.SECRET_KEY);
+
+    const user = await User.findOne({ _id: tokenData._id });
+
+    if (!user) {
+      return res.status(400).json({ message: "ERROR" });
+    }
+    const token = await userLogin.generateAuthToken();
+
+    res.cookie("jwttoken", token, {
+      expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+      httpOnly: true,
+    });
+
+    return res.status(200).json({ user });
+  } catch (error) {
+    return res.status(401).json({ message: "ERROR" });
   }
 });
 
@@ -290,7 +339,7 @@ router.post("/updateuserdetails/:id", async (req, res) => {
       email: email,
       phone: phone,
       password: password,
-      cpassword: cpassword, 
+      cpassword: cpassword,
     }
   );
   return res.status(200).json(updateUserDetails);
@@ -298,7 +347,6 @@ router.post("/updateuserdetails/:id", async (req, res) => {
 
 router.post("/updateStatus/:id", async (req, res) => {
   const { updateStatus, reason } = req.body;
-  console.log(req.body);
 
   const update = await Cart.findOneAndUpdate(
     { _id: req.params.id },
@@ -347,6 +395,12 @@ router.delete("/updateproduct/:id", async (req, res) => {
   return res.json(products);
 });
 
+router.delete("/deleteUserOne/:id", async (req, res) => {
+  const { id } = req.params;
+  const data = await User.findOneAndDelete({ _id: req.params.id });
+  return res.json(data);
+});
+
 router.put("/updateproduct/:id", async (req, res) => {
   const { id } = req.params;
   const products = await Product.findOneAndUpdate(
@@ -362,10 +416,6 @@ router.get("/updateproduct/:id", async (req, res) => {
   return res.json(products);
 });
 
-router.post("/uploadfile", upload.single("file"), (req, res) => {
-  return res.json({ file: req.file });
-});
-
 router.get("/get/restaurant/:id", async (req, res) => {
   const restaurants = await RestaurantNewUser.findOne({ _id: req.params.id });
   return res.json(restaurants);
@@ -374,6 +424,11 @@ router.get("/get/restaurant/:id", async (req, res) => {
 router.get("/get/product/:id", async (req, res) => {
   const product = await Product.findOne({ _id: req.params.id });
   return res.json(product);
+});
+
+router.delete("/deleteContact/:id", async (req, res) => {
+  const contact = await Contact.findByIdAndDelete({ _id: req.params.id });
+  return res.json(contact);
 });
 
 router.get("/get/info/restaurant/:id", async (req, res) => {
@@ -387,64 +442,59 @@ router.get("/logout", (req, res) => {
   res.clearCookie("jwttoken", { path: "/" });
   res.status(200).json("User logout");
 });
- 
 
 //sending email verification code
 router.post("/emailSend", async (req, res) => {
-  const {email } = req.body
+  const { email } = req.body;
   let data = await User.findOne({ email: req.body.email });
 
   const responceType = {};
 
   if (data) {
-    let otpcode = Math.floor(Math.random() * 10000 + 1);  
+    let otpcode = Math.floor(Math.random() * 10000 + 1);
     responceType.statusText = "Success";
-    responceType.message = "Please check Your Email Id";   
-
+    responceType.message = "Please check Your Email Id";
 
     /////////////////////////////////////////////////////////////////
-    
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: 'jaradomkar1@gmail.com',
-      pass: '1234@1234',
-    },
 
-  });
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "jaradomkar1@gmail.com",
+        pass: "1234@1234",
+      },
+    });
 
-  const mailOptions = {
-    from: "jaradomkar1@gmail.com",
-    to: req.body.email,
-    subject: "One time verification OTP from BISTRO",
-    text: otpcode.toString(),
-  };
+    const mailOptions = {
+      from: "jaradomkar1@gmail.com",
+      to: req.body.email,
+      subject: "One time verification OTP from BISTRO",
+      text: otpcode.toString(),
+    };
 
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log(error.message);
+      } else {
+        console.log("Email sent: " + info.response);
+      }
+    });
+    let final__otp = otpcode.toString();
+    res.status(200).json({ email, final__otp });
 
-  transporter.sendMail(mailOptions, function (error, info) {
-    if (error) {
-      console.log(error.message)
-    } else {
-      console.log("Email sent: " + info.response); 
-    }
-  }); 
-  let final__otp = otpcode.toString();
-  res.status(200).json({email, final__otp});
-  
     //////////////////////////////////////////////////////////////////
   } else {
     responceType.statusText = "error";
     responceType.message = "Email Id not Exist";
-  }  
-   
+  }
 });
 
 router.post("/changePassword", async (req, res) => {
-  let {otp, otpcode, email, password, cpassword } = req.body;
-  let data = await User.findOne({ email: email}); 
+  let { otp, otpcode, email, password, cpassword } = req.body;
+  let data = await User.findOne({ email: email });
 
   const responce = {};
-  if (data && otp===otpcode) {
+  if (data && otp === otpcode) {
     let currentTime = new Date().getTime();
     let diff = data.expireIn - currentTime;
 
@@ -462,6 +512,81 @@ router.post("/changePassword", async (req, res) => {
       user.save();
       responce.message = "Password changed Successfully";
       responce.statusText = "Success";
+      res.status(200).json(responce);
+    }
+  } else {
+    responce.message = "Invalid Otp";
+    responce.statusText = "error";
+    res.status(401).json(responce);
+  }
+});
+
+router.get("/get/contactDetails", async (req, res) => {
+  const Contacts = await Contact.find();
+  return res.json(Contacts);
+});
+
+//sending email verification code fro register route
+router.post("/emailSendforverification", async (req, res) => {
+  const { email } = req.body;
+  console.log(req.body);
+  let data = await User.findOne({ email: email });
+
+  const responceType = {};
+
+  if (!data) {
+    let otpcode = Math.floor(Math.random() * 10000 + 1);
+    responceType.statusText = "Success";
+    responceType.message = "Please check Your Email Id";
+
+    /////////////////////////////////////////////////////////////////
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "jaradomkar1@gmail.com",
+        pass: "1234@1234",
+      },
+    });
+
+    const mailOptions = {
+      from: "jaradomkar1@gmail.com",
+      to: req.body.email,
+      subject: "One time verification OTP from BISTRO",
+      text: otpcode.toString(),
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log(error.message);
+      } else {
+        console.log("Email sent: " + info.response);
+      }
+    });
+    let final__otp = otpcode.toString();
+    res.status(200).json({ email, final__otp });
+    console.log({ email, final__otp });
+
+    //////////////////////////////////////////////////////////////////
+  } else {
+    return res.status(401).json({ message: "ERROR" });
+  }
+});
+
+router.post("/emailVerification", async (req, res) => {
+  let { otp, otpcode, email } = req.body;
+  let data = await User.findOne({ email: email });
+
+  const responce = {};
+  if (!data && otp === otpcode) {
+    let currentTime = new Date().getTime();
+    let diff = currentTime * 60 * 30 - currentTime;
+
+    if (diff < 0) {
+      responce.message = "Token Expire";
+      responce.statusText = "error";
+      res.status(402).json(responce);
+    } else {
       res.status(200).json(responce);
     }
   } else {
